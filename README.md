@@ -114,9 +114,3 @@ Special thanks to the Python community and all contributors who help make **Pyli
 
 ---
 
-### 📌 Notes
-
-- Replace the `screenshots/banner.png` and other paths with the actual paths to the uploaded images in the repository.
-- Customize the email and other contact information if required.
-```
-
