@@ -7,7 +7,6 @@ branding:
   color: 'purple'
 
 runs:
-image:'Pyide.png'
   using: 'composite'
   steps:
     - name: Setup Python
