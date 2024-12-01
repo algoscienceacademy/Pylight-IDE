@@ -3,10 +3,11 @@ description: 'A modern, feature-rich Python IDE with support for multiple langua
 author: 'Shahrear (AlgoScienceAcademy)'
 
 branding:
-  icon: 'Pyide.png'
+  icon: 'action'
   color: 'purple'
 
 runs:
+image:'Pyide.png'
   using: 'composite'
   steps:
     - name: Setup Python
