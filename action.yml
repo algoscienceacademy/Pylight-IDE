@@ -1,0 +1,106 @@
+name: 'Pylight IDE'
+description: 'A modern, feature-rich Python IDE with support for multiple languages'
+author: 'Shahrear (AlgoScienceAcademy)'
+
+branding:
+  icon: 'Pyide.png'
+  color: 'purple'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+        
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install PySide6 qdarkstyle
+      shell: bash
+
+    - name: Run IDE
+      run: python code_editor.py
+      shell: bash
+
+# Documentation and References
+documentation:
+  name: 'Pylight IDE'
+  description: |
+    A modern, feature-rich Integrated Development Environment (IDE) built with PySide6.
+    Supports Python, C++, Java, and web development with an intuitive interface and powerful features.
+    
+  features:
+    - Syntax highlighting for multiple languages
+    - Intelligent code completion
+    - Project management
+    - Git integration
+    - Built-in terminal
+    - Dark theme support
+    - File explorer
+    - Multiple file tabs
+    
+  screenshots:
+    - name: 'Welcome Screen'
+      path: 'pic_1.png'
+      description: 'Modern welcome screen with recent projects and quick actions'
+      
+    - name: 'Main IDE Interface'
+      path: 'pic_2.png'
+      description: 'Full IDE interface with editor, file explorer, and terminal'
+      
+    - name: 'Code Editing'
+      path: 'pic_3.png'
+      description: 'Advanced code editing with syntax highlighting and completion'
+      
+    - name: 'Debug Mode'
+      path: 'pic_4.png'
+      description: 'Debugging interface with variable inspection and breakpoints'
+
+  author:
+    name: 'Shahrear'
+    organization: 'AlgoScienceAcademy'
+    website: 'https://algoscienceacademy.com'
+    github: 'https://github.com/shahrear'
+
+  repository:
+    url: 'https://github.com/algoscienceacademy/pylight-ide'
+    issues: 'https://github.com/algoscienceacademy/pylight-ide/issues'
+    wiki: 'https://github.com/algoscienceacademy/pylight-ide/wiki'
+
+  license: 'MIT'
+  version: '1.0.0'
+  
+  requirements:
+    - 'Python 3.8+'
+    - 'PySide6'
+    - 'qdarkstyle'
+    - 'Git (optional for version control features)'
+
+  installation: |
+    1. Clone the repository:
+       ```
+       git clone https://github.com/algoscienceacademy/pylight-ide.git
+       ```
+    2. Install dependencies:
+       ```
+       pip install -r requirements.txt
+       ```
+    3. Run the IDE:
+       ```
+       python code_editor.py
+       ```
+
+  support:
+    email: 'support@algoscienceacademy.com'
+    discord: 'https://discord.gg/algoscienceacademy'
+    documentation: 'https://pylight-ide.readthedocs.io'
+
+  contributing: |
+    We welcome contributions! Please see our contributing guidelines in CONTRIBUTING.md.
+    Feel free to submit issues, fork the repository and create pull requests.
+
+  acknowledgments: |
+    Special thanks to the PySide6 team and all contributors who helped make this project possible.
+    Icons and themes inspired by Visual Studio Code and other modern IDEs. 
