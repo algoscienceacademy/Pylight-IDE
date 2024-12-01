@@ -3,7 +3,7 @@ description: 'A modern, feature-rich Python IDE with support for multiple langua
 author: 'Shahrear (AlgoScienceAcademy)'
 
 branding:
-  icon: 'action'
+  icon: 'activity'
   color: 'purple'
 
 runs:
