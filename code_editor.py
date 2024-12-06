@@ -25,16 +25,322 @@ import keyword
 import builtins
 import re
 import time
+from pathlib import Path
 
-# Add PythonHighlighter class for syntax highlighting
-class PythonHighlighter(QSyntaxHighlighter):
+# Add these color constants at the top of the file
+EDITOR_COLORS = {
+    'background': '#1E1E1E',
+    'text': '#F8F8F2',
+    'keywords': '#FF79C6',
+    'strings': '#F1FA8C',
+    'comments': '#6272A4',
+    'functions': '#50FA7B',
+    'numbers': '#BD93F9',
+    'operators': '#FF79C6',
+    'class_names': '#8BE9FD',
+    'decorators': '#FFB86C',
+    'constants': '#BD93F9',
+    'selection_bg': '#44475A',
+    'current_line': '#283593',
+    'matching_brackets': '#F8F8F2',
+    'line_numbers': '#6272A4',
+    'line_numbers_active': '#F8F8F2'
+}
+
+# Add these classes right after imports, before any other class definitions
+class NewFileDialog(QDialog):
+    def __init__(self, directory, parent=None):
+        super().__init__(parent)
+        self.directory = directory
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("New File")
+        layout = QVBoxLayout(self)
+
+        # Current directory label
+        dir_label = QLabel(f"Current Directory: {self.directory}")
+        dir_label.setStyleSheet("color: #6272A4;")
+        layout.addWidget(dir_label)
+
+        # File type combo box
+        layout.addWidget(QLabel("File Type:"))
+        self.file_type = QComboBox()
+        self.file_types = {
+            "Python File": ".py",
+            "C++ File": ".cpp",
+            "C File": ".c",
+            "Header File": ".h",
+            "HPP File": ".hpp",
+            "Java File": ".java",
+            "JavaScript File": ".js",
+            "HTML File": ".html",
+            "CSS File": ".css",
+            "Text File": ".txt",
+            "Custom": ""
+        }
+        self.file_type.addItems(self.file_types.keys())
+        layout.addWidget(self.file_type)
+
+        # File name input
+        layout.addWidget(QLabel("File Name:"))
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Enter file name or path/filename")
+        layout.addWidget(self.name_input)
+
+        # Custom extension for custom file type
+        self.custom_ext_label = QLabel("Custom Extension:")
+        self.custom_ext_input = QLineEdit()
+        self.custom_ext_input.setPlaceholderText(".ext")
+        layout.addWidget(self.custom_ext_label)
+        layout.addWidget(self.custom_ext_input)
+        
+        # Hide custom extension by default
+        self.custom_ext_label.hide()
+        self.custom_ext_input.hide()
+
+        # Example label
+        example = QLabel("Example: utils/helper.py or myfile.cpp")
+        example.setStyleSheet("color: #6272A4; font-style: italic;")
+        layout.addWidget(example)
+
+        # Connect signals
+        self.file_type.currentTextChanged.connect(self.on_file_type_changed)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.validate_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def on_file_type_changed(self, file_type):
+        # Show/hide custom extension input
+        is_custom = file_type == "Custom"
+        self.custom_ext_label.setVisible(is_custom)
+        self.custom_ext_input.setVisible(is_custom)
+        
+        if not is_custom:
+            self.update_extension()
+
+    def update_extension(self):
+        name = self.name_input.text()
+        if not name:
+            return
+            
+        # Split into path and filename
+        parts = os.path.splitext(name)
+        base_name = parts[0]
+        
+        # Add selected extension
+        ext = self.file_types[self.file_type.currentText()]
+        self.name_input.setText(f"{base_name}{ext}")
+
+    def validate_and_accept(self):
+        name = self.name_input.text()
+        if not name:
+            QMessageBox.warning(self, "Error", "File name cannot be empty")
+            return
+            
+        # Check for invalid characters
+        invalid_chars = '<>:"|?*'
+        if any(c in name for c in invalid_chars):
+            QMessageBox.warning(self, "Error", f"File name cannot contain any of these characters: {invalid_chars}")
+            return
+            
+        self.accept()
+
+    def get_file_info(self):
+        """Get the complete file name with extension"""
+        try:
+            # Get base name
+            base_name = str(self.name_input.text()).strip()
+            if not base_name:
+                return None
+            
+            # Get file type
+            file_type = str(self.file_type.currentText())
+            
+            # Handle file extension
+            if file_type == "Custom":
+                # For custom type, use custom extension
+                ext = str(self.custom_ext_input.text()).strip()
+                if ext and not ext.startswith('.'):
+                    ext = '.' + ext
+            else:
+                # For predefined types, use the extension from file_types
+                ext = str(self.file_types.get(file_type, ''))
+                
+            # Combine name and extension
+            if ext and not base_name.endswith(ext):
+                full_name = base_name + ext
+            else:
+                full_name = base_name
+                
+            return full_name
+            
+        except Exception as e:
+            print(f"Error in get_file_info: {str(e)}")  # Debug print
+            return None
+
+class NewFolderDialog(QDialog):
+    def __init__(self, directory, parent=None):
+        super().__init__(parent)
+        self.directory = directory
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("New Folder")
+        layout = QVBoxLayout(self)
+
+        # Folder name input
+        layout.addWidget(QLabel("Folder Name:"))
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Enter folder name")
+        layout.addWidget(self.name_input)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.validate_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def validate_and_accept(self):
+        """Validate folder name before accepting"""
+        name = self.name_input.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Error", "Folder name cannot be empty")
+            return
+            
+        if not any(c.isalnum() for c in name):
+            QMessageBox.warning(self, "Error", "Folder name must contain at least one alphanumeric character")
+            return
+            
+        # Check for invalid characters
+        invalid_chars = '<>:"/\\|?*'
+        if any(c in name for c in invalid_chars):
+            QMessageBox.warning(self, "Error", f"Folder name cannot contain any of these characters: {invalid_chars}")
+            return
+            
+        self.accept()
+
+    def get_folder_info(self):
+        """Get the folder name"""
+        return self.name_input.text().strip()
+
+# Move FileSystemHelper class here, before any other class definitions
+class FileSystemHelper:
+    def __init__(self, parent=None):
+        self.parent = parent
+
+    def create_file(self, directory):
+        """Create a new file in the specified directory"""
+        name, ok = QInputDialog.getText(
+            self.parent,
+            "New File",
+            "Enter file name:",
+            QLineEdit.Normal,
+            "untitled.txt"
+        )
+        
+        if ok and name:
+            try:
+                file_path = Path(directory) / name
+                if not file_path.exists():
+                    file_path.touch()
+                    return str(file_path)
+                else:
+                    QMessageBox.warning(
+                        self.parent,
+                        "File Exists",
+                        f"File '{name}' already exists in this location."
+                    )
+            except Exception as e:
+                QMessageBox.critical(
+                    self.parent,
+                    "Error",
+                    f"Could not create file: {str(e)}"
+                )
+        return None
+
+    def create_folder(self, directory):
+        """Create a new folder in the specified directory"""
+        name, ok = QInputDialog.getText(
+            self.parent,
+            "New Folder",
+            "Enter folder name:",
+            QLineEdit.Normal,
+            "New Folder"
+        )
+        
+        if ok and name:
+            try:
+                folder_path = Path(directory) / name
+                if not folder_path.exists():
+                    folder_path.mkdir()
+                    return str(folder_path)
+                else:
+                    QMessageBox.warning(
+                        self.parent,
+                        "Folder Exists",
+                        f"Folder '{name}' already exists in this location."
+                    )
+            except Exception as e:
+                QMessageBox.critical(
+                    self.parent,
+                    "Error",
+                    f"Could not create folder: {str(e)}"
+                )
+        return None
+
+# Add language-specific syntax highlighters
+class BaseHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.highlighting_rules = []
 
+    def highlightBlock(self, text):
+        for pattern, format in self.highlighting_rules:
+            expression = QRegularExpression(pattern)
+            matches = expression.globalMatch(text)
+            while matches.hasNext():
+                match = matches.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), format)
+
+class PythonHighlighter(BaseHighlighter):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        # Python-specific formats
+        self.init_formats()
+        
+        # Add Python-specific rules
+        self.add_python_rules()
+        
+        # Add common rules (strings, numbers, etc.)
+        self.add_common_rules()
+
+    def init_formats(self):
         # Keywords
-        keyword_format = QTextCharFormat()
-        keyword_format.setForeground(QColor("#569CD6"))
+        self.keyword_format = QTextCharFormat()
+        self.keyword_format.setForeground(QColor(EDITOR_COLORS['keywords']))
+        self.keyword_format.setFontWeight(QFont.Bold)
+        
+        # Built-ins
+        self.builtin_format = QTextCharFormat()
+        self.builtin_format.setForeground(QColor("#66D9EF"))
+        
+        # Decorators
+        self.decorator_format = QTextCharFormat()
+        self.decorator_format.setForeground(QColor(EDITOR_COLORS['decorators']))
+
+    def add_python_rules(self):
+        import builtins as py_builtins  # Import builtins properly
+        
+        # Python keywords
         keywords = [
             "and", "as", "assert", "break", "class", "continue", "def",
             "del", "elif", "else", "except", "False", "finally", "for",
@@ -44,50 +350,136 @@ class PythonHighlighter(QSyntaxHighlighter):
         ]
         for word in keywords:
             pattern = f"\\b{word}\\b"
-            self.highlighting_rules.append((pattern, keyword_format))
+            self.highlighting_rules.append((pattern, self.keyword_format))
+            
+        # Python built-ins
+        builtin_funcs = dir(py_builtins)  # Use the imported builtins
+        for word in builtin_funcs:
+            if not word.startswith('_'):  # Skip private builtins
+                pattern = f"\\b{word}\\b"
+                self.highlighting_rules.append((pattern, self.builtin_format))
+            
+        # Decorators
+        self.highlighting_rules.append((r"@\w+", self.decorator_format))
 
-        # String literals
+    def add_common_rules(self):
+        # String formats
         string_format = QTextCharFormat()
-        string_format.setForeground(QColor("#CE9178"))
-        self.highlighting_rules.append((r'"[^"\\]*(\\.[^"\\]*)*"', string_format))
-        self.highlighting_rules.append((r"'[^'\\]*(\\.[^'\\]*)*'", string_format))
-
-        # Function calls
-        function_format = QTextCharFormat()
-        function_format.setForeground(QColor("#DCDCAA"))
-        self.highlighting_rules.append((r"\b[A-Za-z0-9_]+(?=\()", function_format))
-
-        # Comments
+        string_format.setForeground(QColor(EDITOR_COLORS['strings']))
+        
+        # Comment format
         comment_format = QTextCharFormat()
-        comment_format.setForeground(QColor("#6A9955"))
-        self.highlighting_rules.append((r"#[^\n]*", comment_format))
+        comment_format.setForeground(QColor(EDITOR_COLORS['comments']))
+        comment_format.setFontItalic(True)
+        
+        # Number format
+        number_format = QTextCharFormat()
+        number_format.setForeground(QColor(EDITOR_COLORS['numbers']))
+        
+        # Add common rules
+        self.highlighting_rules.extend([
+            # Strings
+            (r'"[^"\\]*(\\.[^"\\]*)*"', string_format),
+            (r"'[^'\\]*(\\.[^'\\]*)*'", string_format),
+            # Comments
+            (r'#[^\n]*', comment_format),
+            # Numbers
+            (r'\b\d+\b', number_format),
+        ])
 
-    def highlightBlock(self, text):
-        for pattern, format in self.highlighting_rules:
-            expression = QRegularExpression(pattern)
-            match_iterator = expression.globalMatch(text)
-            while match_iterator.hasNext():
-                match = match_iterator.next()
-                self.setFormat(match.capturedStart(), match.capturedLength(), format)
+class CppHighlighter(BaseHighlighter):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        # C++-specific formats
+        self.init_formats()
+        
+        # Add C++-specific rules
+        self.add_cpp_rules()
+        
+        # Add common rules
+        self.add_common_rules()
 
-# Add back the LineNumberArea class at the beginning, after imports
-class LineNumberArea(QWidget):
-    def __init__(self, editor):
-        super().__init__(editor)
-        self.editor = editor
-        self.setStyleSheet("""
-            background-color: #1E1E1E;
-            color: #858585;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 13px;
-            padding: 5px;
-        """)
+    def init_formats(self):
+        # Keywords
+        self.keyword_format = QTextCharFormat()
+        self.keyword_format.setForeground(QColor(EDITOR_COLORS['keywords']))
+        self.keyword_format.setFontWeight(QFont.Bold)
+        
+        # Types
+        self.type_format = QTextCharFormat()
+        self.type_format.setForeground(QColor("#66D9EF"))
+        
+        # Preprocessor
+        self.preprocessor_format = QTextCharFormat()
+        self.preprocessor_format.setForeground(QColor("#F92672"))
 
-    def sizeHint(self):
-        return QSize(self.editor.lineNumberAreaWidth(), 0)
+    def add_cpp_rules(self):
+        # C++ keywords
+        keywords = [
+            "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand",
+            "bitor", "bool", "break", "case", "catch", "char", "char8_t",
+            "char16_t", "char32_t", "class", "compl", "concept", "const",
+            "consteval", "constexpr", "constinit", "const_cast", "continue",
+            "co_await", "co_return", "co_yield", "decltype", "default",
+            "delete", "do", "double", "dynamic_cast", "else", "enum",
+            "explicit", "export", "extern", "false", "float", "for",
+            "friend", "goto", "if", "inline", "int", "long", "mutable",
+            "namespace", "new", "noexcept", "not", "not_eq", "nullptr",
+            "operator", "or", "or_eq", "private", "protected", "public",
+            "register", "reinterpret_cast", "requires", "return", "short",
+            "signed", "sizeof", "static", "static_assert", "static_cast",
+            "struct", "switch", "template", "this", "thread_local", "throw",
+            "true", "try", "typedef", "typeid", "typename", "union",
+            "unsigned", "using", "virtual", "void", "volatile", "wchar_t",
+            "while", "xor", "xor_eq"
+        ]
+        for word in keywords:
+            pattern = f"\\b{word}\\b"
+            self.highlighting_rules.append((pattern, self.keyword_format))
+            
+        # Preprocessor directives
+        self.highlighting_rules.append((r"#\w+", self.preprocessor_format))
 
-    def paintEvent(self, event):
-        self.editor.lineNumberAreaPaintEvent(event)
+class JavaHighlighter(BaseHighlighter):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_formats()
+        self.add_java_rules()
+        self.add_common_rules()
+
+    def init_formats(self):
+        # Keywords
+        self.keyword_format = QTextCharFormat()
+        self.keyword_format.setForeground(QColor(EDITOR_COLORS['keywords']))
+        self.keyword_format.setFontWeight(QFont.Bold)
+        
+        # Types
+        self.type_format = QTextCharFormat()
+        self.type_format.setForeground(QColor("#66D9EF"))
+        
+        # Annotations
+        self.annotation_format = QTextCharFormat()
+        self.annotation_format.setForeground(QColor(EDITOR_COLORS['decorators']))
+
+    def add_java_rules(self):
+        # Java keywords
+        keywords = [
+            "abstract", "assert", "boolean", "break", "byte", "case", "catch",
+            "char", "class", "const", "continue", "default", "do", "double",
+            "else", "enum", "extends", "final", "finally", "float", "for",
+            "if", "implements", "import", "instanceof", "int", "interface",
+            "long", "native", "new", "package", "private", "protected",
+            "public", "return", "short", "static", "strictfp", "super",
+            "switch", "synchronized", "this", "throw", "throws", "transient",
+            "try", "void", "volatile", "while", "true", "false", "null"
+        ]
+        for word in keywords:
+            pattern = f"\\b{word}\\b"
+            self.highlighting_rules.append((pattern, self.keyword_format))
+            
+        # Annotations
+        self.highlighting_rules.append((r"@\w+", self.annotation_format))
 
 # Add CodeCompleter class for intelligent code completion
 class CodeCompleter(QCompleter):
@@ -291,7 +683,27 @@ class AdvancedCodeCompleter(QCompleter):
     def get_snippet(self, trigger):
         return self.snippets.get(trigger)
 
-# Update GlassmorphicCodeEditor to use the advanced completer
+# Add LineNumberArea class before GlassmorphicCodeEditor
+class LineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.editor = editor
+        self.setStyleSheet(f"""
+            background-color: {EDITOR_COLORS['background']}E6;
+            color: {EDITOR_COLORS['line_numbers']};
+            font-family: 'JetBrains Mono';
+            font-size: 11px;
+            padding: 8px 12px;
+            border-right: 1px solid {EDITOR_COLORS['comments']}40;
+        """)
+
+    def sizeHint(self):
+        return QSize(self.editor.lineNumberAreaWidth(), 0)
+
+    def paintEvent(self, event):
+        self.editor.lineNumberAreaPaintEvent(event)
+
+# Then update GlassmorphicCodeEditor to include line number methods
 class GlassmorphicCodeEditor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -301,52 +713,117 @@ class GlassmorphicCodeEditor(QPlainTextEdit):
         self.setup_line_numbers()
         self.setup_syntax_highlighter()
 
+    def lineNumberAreaWidth(self):
+        digits = 1
+        max_num = max(1, self.blockCount())
+        while max_num >= 10:
+            max_num //= 10
+            digits += 1
+        space = 3 + self.fontMetrics().horizontalAdvance('9') * digits
+        return space
+
+    def updateLineNumberAreaWidth(self, _):
+        self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+    def updateLineNumberArea(self, rect, dy):
+        if dy:
+            self.line_number_area.scroll(0, dy)
+        else:
+            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
+        if rect.contains(self.viewport().rect()):
+            self.updateLineNumberAreaWidth(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.lineNumberAreaWidth(), cr.height()))
+
+    def lineNumberAreaPaintEvent(self, event):
+        painter = QPainter(self.line_number_area)
+        painter.fillRect(event.rect(), QColor(EDITOR_COLORS['background']))
+
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        offset = self.contentOffset()
+        top = self.blockBoundingGeometry(block).translated(offset).top()
+        bottom = top + self.blockBoundingRect(block).height()
+
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+                painter.setPen(QColor(EDITOR_COLORS['line_numbers']))
+                painter.drawText(0, int(top), self.line_number_area.width(),
+                               self.fontMetrics().height(),
+                               Qt.AlignRight, number)
+            block = block.next()
+            top = bottom
+            bottom = top + self.blockBoundingRect(block).height()
+            block_number += 1
+
+    def setup_line_numbers(self):
+        self.line_number_area = LineNumberArea(self)
+        self.blockCountChanged.connect(self.updateLineNumberAreaWidth)
+        self.updateRequest.connect(self.updateLineNumberArea)
+        self.cursorPositionChanged.connect(self.highlightCurrentLine)
+        self.updateLineNumberAreaWidth(0)
+
     def setup_editor(self):
         # Set up font
-        font = QFont("Consolas", 12)
+        font = QFont("JetBrains Mono", 12)  # Using JetBrains Mono for better coding experience
         font.setStyleHint(QFont.Monospace)
         self.setFont(font)
         
         # Tab settings
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(' ') * 4)
         
-        # Set up colors and styling
-        self.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: rgba(30, 30, 30, 0.95);
-                color: #D4D4D4;
+        # Set up colors and styling with enhanced glassmorphic effect
+        self.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {EDITOR_COLORS['background']}E6;
+                color: {EDITOR_COLORS['text']};
                 border: none;
-                border-radius: 8px;
-                selection-background-color: #264F78;
-                selection-color: #FFFFFF;
-                padding: 5px;
-            }
-            QScrollBar:vertical {
-                background: rgba(40, 42, 54, 0.5);
+                border-radius: 12px;
+                selection-background-color: {EDITOR_COLORS['selection_bg']};
+                selection-color: {EDITOR_COLORS['text']};
+                padding: 8px;
+            }}
+            QPlainTextEdit:focus {{
+                border: 1px solid {EDITOR_COLORS['keywords']}40;
+                background-color: {EDITOR_COLORS['background']}F2;
+            }}
+            QScrollBar:vertical {{
+                background: {EDITOR_COLORS['background']}80;
                 width: 12px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(98, 114, 164, 0.8);
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {EDITOR_COLORS['comments']}80;
                 border-radius: 6px;
                 min-height: 20px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            QScrollBar:horizontal {
-                background: rgba(40, 42, 54, 0.5);
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {EDITOR_COLORS['comments']}B3;
+            }}
+            QScrollBar:horizontal {{
+                background: {EDITOR_COLORS['background']}80;
                 height: 12px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:horizontal {
-                background: rgba(98, 114, 164, 0.8);
+                margin: 2px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: {EDITOR_COLORS['comments']}80;
                 border-radius: 6px;
                 min-width: 20px;
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: {EDITOR_COLORS['comments']}B3;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                height: 0px;
                 width: 0px;
-            }
+            }}
         """)
 
     def setup_drag_drop(self):
@@ -504,139 +981,8 @@ class GlassmorphicCodeEditor(QPlainTextEdit):
         indented_text = '    ' + selected_text.replace('\u2029', '\n    ')
         tc.insertText(indented_text)
 
-    def setup_line_numbers(self):
-        self.line_number_area = LineNumberArea(self)
-        self.blockCountChanged.connect(self.updateLineNumberAreaWidth)  # Fixed method name
-        self.updateRequest.connect(self.updateLineNumberArea)
-        self.cursorPositionChanged.connect(self.highlightCurrentLine)
-        self.updateLineNumberAreaWidth(0)
-
     def setup_syntax_highlighter(self):
         highlighter = PythonHighlighter(self.document())
-
-    def lineNumberAreaWidth(self):
-        digits = 1
-        max_num = max(1, self.blockCount())
-        while max_num >= 10:
-            max_num //= 10
-            digits += 1
-        space = 3 + self.fontMetrics().horizontalAdvance('9') * digits
-        return space
-
-    def updateLineNumberAreaWidth(self, newBlockCount):
-        self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
-
-    def updateLineNumberArea(self, rect, dy):
-        if dy:
-            self.line_number_area.scroll(0, dy)
-        else:
-            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
-        if rect.contains(self.viewport().rect()):
-            self.updateLineNumberAreaWidth(0)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        cr = self.contentsRect()
-        self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.lineNumberAreaWidth(), cr.height()))
-
-    def lineNumberAreaPaintEvent(self, event):
-        painter = QPainter(self.line_number_area)
-        painter.fillRect(event.rect(), QColor("#1E1E1E"))
-
-        block = self.firstVisibleBlock()
-        block_number = block.blockNumber()
-        offset = self.contentOffset()
-        top = self.blockBoundingGeometry(block).translated(offset).top()
-        bottom = top + self.blockBoundingRect(block).height()
-
-        while block.isValid() and top <= event.rect().bottom():
-            if block.isVisible() and bottom >= event.rect().top():
-                number = str(block_number + 1)
-                painter.setPen(QColor("#858585"))
-                painter.drawText(0, int(top), self.line_number_area.width(), 
-                               self.fontMetrics().height(),
-                               Qt.AlignRight, number)
-            block = block.next()
-            top = bottom
-            bottom = top + self.blockBoundingRect(block).height()
-            block_number += 1
-
-    def highlightCurrentLine(self):
-        extraSelections = []
-        if not self.isReadOnly():
-            selection = QTextEdit.ExtraSelection()
-            lineColor = QColor("#2D2D2D")
-            selection.format.setBackground(lineColor)
-            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
-            selection.cursor = self.textCursor()
-            selection.cursor.clearSelection()
-            extraSelections.append(selection)
-        self.setExtraSelections(extraSelections)
-
-    def fold_current_block(self):
-        cursor = self.textCursor()
-        block = cursor.block()
-        if block.isValid():
-            self.folded_blocks.add(block.blockNumber())
-            block.setVisible(False)
-            self.update()
-
-    def unfold_current_block(self):
-        cursor = self.textCursor()
-        block = cursor.block()
-        if block.isValid():
-            block_number = block.blockNumber()
-            if block_number in self.folded_blocks:
-                self.folded_blocks.remove(block_number)
-                block.setVisible(True)
-                self.update()
-
-    def duplicate_current_line(self):
-        cursor = self.textCursor()
-        if cursor.hasSelection():
-            # Duplicate selection
-            text = cursor.selectedText()
-            end = cursor.selectionEnd()
-            cursor.setPosition(end)
-            cursor.insertText('\n' + text)
-        else:
-            # Duplicate current line
-            block = cursor.block()
-            text = block.text()
-            cursor.movePosition(QTextCursor.EndOfLine)
-            cursor.insertText('\n' + text)
-
-    def delete_current_line(self):
-        cursor = self.textCursor()
-        block = cursor.block()
-        
-        if cursor.hasSelection():
-            cursor.deleteChar()
-        else:
-            cursor.select(QTextCursor.BlockUnderCursor)
-            cursor.removeSelectedText()
-            cursor.deleteChar()  # Delete the newline
-
-    def setup_advanced_completion(self):
-        self.completer = AdvancedCodeCompleter(self)
-        self.completer.setWidget(self)
-        self.completer.activated.connect(self.insert_completion)
-        
-        # Auto-parentheses completion
-        self.auto_pairs = {
-            '"': '"',
-            "'": "'",
-            "(": ")",
-            "[": "]",
-            "{": "}",
-        }
-        
-        # Function help setup
-        self.current_function = None
-        self.function_help_timer = QTimer(self)
-        self.function_help_timer.setInterval(500)  # 500ms delay
-        self.function_help_timer.setSingleShot(True)
-        self.function_help_timer.timeout.connect(self.show_function_help)
 
     def setup_auto_indent(self):
         self.indent_chars = {
@@ -713,10 +1059,32 @@ class GlassmorphicCodeEditor(QPlainTextEdit):
             self.smart_completion = SmartCompletion(editor)
             self.code_analyzer = CodeAnalyzer(editor)
 
+    # Add this method to the GlassmorphicCodeEditor class
+    def highlightCurrentLine(self):
+        """Highlight the current line"""
+        extraSelections = []
+
+        if not self.isReadOnly():
+            selection = QTextEdit.ExtraSelection()
+            
+            # Set the line color
+            lineColor = QColor(EDITOR_COLORS['current_line'])
+            lineColor.setAlpha(60)  # Make it semi-transparent
+            
+            selection.format.setBackground(lineColor)
+            selection.format.setProperty(QTextFormat.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            
+            extraSelections.append(selection)
+        
+        self.setExtraSelections(extraSelections)
+
 # Add new TabWidget class
 class EditorTabWidget(QTabWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.setTabsClosable(True)
         self.setMovable(True)
         self.tabCloseRequested.connect(self.close_tab)
@@ -794,7 +1162,11 @@ class EditorTabWidget(QTabWidget):
 
         # If no tabs left, show welcome screen
         if self.count() == 0:
-            self.parent().show_welcome_screen()
+            if hasattr(self.main_window, 'show_welcome_screen'):
+                self.main_window.show_welcome_screen()
+            else:
+                # Fallback if welcome screen not available
+                self.add_new_tab("Untitled")
 
     def setup_style(self):
         self.setStyleSheet("""
@@ -857,7 +1229,7 @@ class EditorTabWidget(QTabWidget):
                     except Exception as e:
                         QMessageBox.critical(self, "Error", f"Could not save file: {str(e)}")
                 else:
-                    self.parent().save_file_as()
+                    self.main_window.save_file_as()
                     if not widget.document().isModified():
                         self.removeTab(index)
             elif reply == QMessageBox.Discard:
@@ -866,8 +1238,8 @@ class EditorTabWidget(QTabWidget):
             self.removeTab(index)
 
         # If no tabs left, show welcome screen
-        if self.count() == 0:  # Use self.count() instead of self.tab_widget.count()
-            self.parent().show_welcome_screen()
+        if self.count() == 0 and hasattr(self.main_window, 'show_welcome_screen'):
+            self.main_window.show_welcome_screen()
 
 # Improve Terminal class
 class Terminal(QWidget):
@@ -1374,6 +1746,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Pylight IDE")
         self.setGeometry(100, 100, 1200, 800)
         
+        # Initialize FileSystemHelper first
+        self.fs_helper = FileSystemHelper(self)
+        
         # Set application icon
         app_icon = QIcon("res/Pyide.png")
         self.setWindowIcon(app_icon)
@@ -1808,11 +2183,11 @@ class MainWindow(QMainWindow):
         new_menu = menu.addMenu("New")
         
         # Add file action
-        new_file_action = new_menu.addAction("File")
-        new_file_action.triggered.connect(lambda: self.create_new_file(current_path))
+        new_file_action = new_menu.addAction("New File")
+        new_file_action.triggered.connect(lambda checked, path=current_path: self.create_new_file(path))
         
         # Add folder action
-        new_folder_action = new_menu.addAction("Folder")
+        new_folder_action = new_menu.addAction("New Folder")
         new_folder_action.triggered.connect(lambda: self.create_new_folder(current_path))
         
         if index.isValid():
@@ -1826,80 +2201,114 @@ class MainWindow(QMainWindow):
             delete_action = menu.addAction("Delete")
             delete_action.triggered.connect(lambda: self.delete_item(current_path))
         
-        menu.exec_(self.project_tree.viewport().mapToGlobal(position))
+        menu.exec(self.project_tree.viewport().mapToGlobal(position))
 
-    def create_new_file(self, parent_path=None):
-        """Create new file in selected directory"""
-        # Get parent directory
-        if parent_path is None or os.path.isfile(parent_path):
-            parent_path = os.path.dirname(parent_path) if parent_path else self.project_path
-        
-        name, ok = QInputDialog.getText(
-            self,
-            "New File",
-            "Enter file name:",
-            QLineEdit.Normal,
-            ""
-        )
-        
-        if ok and name:
-            try:
-                file_path = os.path.join(parent_path, name)
+    def create_new_file(self, directory=None):
+        """Create a new file in the specified directory"""
+        try:
+            # Get directory
+            if directory is None:
+                directory = self.project_path if hasattr(self, 'project_path') else os.getcwd()
+            
+            # Show dialog
+            dialog = NewFileDialog(str(directory), self)  # Convert directory to string
+            if dialog.exec() == QDialog.Accepted:
+                # Get the file name and type directly
+                name = dialog.name_input.text().strip()
+                selected_type = dialog.file_type.currentText()
                 
-                # Create any necessary parent directories
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                # Get the extension
+                if selected_type == "Custom":
+                    ext = dialog.custom_ext_input.text().strip()
+                    if ext and not ext.startswith('.'):
+                        ext = '.' + ext
+                else:
+                    ext = dialog.file_types.get(selected_type, '')
+                
+                # Create full file name
+                full_name = name + ext if not name.endswith(ext) else name
+                
+                # Create full path
+                full_path = os.path.join(str(directory), full_name)
                 
                 # Create the file
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write("")
-                
-                # Open the new file in editor
-                self.open_file_in_editor(file_path)
-                
-                # Select the new file in tree
-                new_index = self.project_model.index(file_path)
-                self.project_tree.setCurrentIndex(new_index)
-                
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not create file: {str(e)}")
+                if not os.path.exists(full_path):
+                    # Create directories if needed
+                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                    
+                    # Create empty file
+                    with open(full_path, 'w', encoding='utf-8') as f:
+                        f.write("")
+                    
+                    # Refresh view
+                    self.project_model.setRootPath(str(directory))
+                    
+                    # Show success
+                    self.statusBar().showMessage(f"Created: {full_name}")
+                    
+                    # Open file
+                    self.open_file_in_editor(full_path)
+                    return True
+                    
+                else:
+                    QMessageBox.warning(self, "Error", "File already exists!")
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to create file: {str(e)}")
+        
+        return False
 
-    def create_new_folder(self, parent_path=None):
-        """Create new folder in selected directory"""
-        # Get parent directory
-        if parent_path is None or os.path.isfile(parent_path):
-            parent_path = os.path.dirname(parent_path) if parent_path else self.project_path
-        
-        name, ok = QInputDialog.getText(
-            self,
-            "New Folder",
-            "Enter folder name:",
-            QLineEdit.Normal,
-            ""
-        )
-        
-        if ok and name:
-            try:
-                # Support nested folders with '/' or '\'
-                folder_parts = name.replace('\\', '/').split('/')
-                current_path = parent_path
+    def create_new_folder(self, directory=None):
+        """Create a new folder with improved error handling"""
+        try:
+            if directory is None:
+                directory = self.project_path if hasattr(self, 'project_path') else os.getcwd()
                 
-                # Create each folder in the path
-                for part in folder_parts:
-                    if part:
-                        current_path = os.path.join(current_path, part)
-                        os.makedirs(current_path, exist_ok=True)
-                
-                # Select the deepest created folder
-                new_index = self.project_model.index(current_path)
-                self.project_tree.setCurrentIndex(new_index)
-                self.project_tree.expand(new_index)
-                
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not create folder: {str(e)}")
+            dialog = NewFolderDialog(directory, self)
+            if dialog.exec() == QDialog.Accepted:
+                folder_name = dialog.get_folder_info()
+                if folder_name:
+                    # Create full path and ensure it's a string
+                    folder_path = os.path.join(str(directory), str(folder_name))
+                    
+                    # Create the folder
+                    if not os.path.exists(folder_path):
+                        os.makedirs(folder_path)
+                        
+                        # Refresh project explorer
+                        if hasattr(self, 'project_model'):
+                            self.project_model.setRootPath(directory)
+                        
+                        # Update UI
+                        self.statusBar().showMessage(f"Created folder: {folder_name}", 3000)
+                        
+                        # Select the new folder in project tree
+                        if hasattr(self, 'project_tree'):
+                            index = self.project_model.index(folder_path)
+                            self.project_tree.setCurrentIndex(index)
+                            self.project_tree.scrollTo(index)
+                        
+                        return folder_path
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Folder Exists",
+                            f"Folder '{folder_name}' already exists in this location."
+                        )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create folder: {str(e)}"
+            )
+        return None
 
     def open_file_in_editor(self, file_path):
         """Open file in editor interface"""
         try:
+            # Ensure editor interface is visible
+            self.show_editor_interface()
+            
             # Read file content
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -1909,19 +2318,33 @@ class MainWindow(QMainWindow):
             editor.setPlainText(content)
             editor.current_file = file_path
             
-            # Apply syntax highlighting if Python file
-            if file_path.endswith('.py'):
+            # Apply appropriate syntax highlighting based on file extension
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.py':
                 highlighter = PythonHighlighter(editor.document())
+            # Add more syntax highlighters for other file types as needed
+            
+            # Update status bar
+            self.statusBar().showMessage(f"Opened {file_path}")
+            
+            # Set focus to editor
+            editor.setFocus()
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open file: {str(e)}")
 
     def refresh_project_tree(self):
-        """Refresh project tree view"""
-        if hasattr(self, 'project_model'):
+        """Refresh the project tree view"""
+        if hasattr(self, 'project_model') and hasattr(self, 'project_tree'):
             current_path = self.project_model.rootPath()
             self.project_model.setRootPath("")
             self.project_model.setRootPath(current_path)
+            
+            # Restore expanded state
+            if hasattr(self, 'project_tree'):
+                index = self.project_tree.currentIndex()
+                if index.isValid():
+                    self.project_tree.expand(index)
 
     def rename_item(self, path):
         """Rename file or folder"""
@@ -1963,19 +2386,18 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not open file: {str(e)}")
 
-    def show_editor_interface(self, project_path=None):
+    def show_editor_interface(self):
         """Switch from welcome screen to editor interface"""
         # Show editor components
         self.show_editor_components()
         
         # Set up project if path provided
-        if project_path:
-            self.project_path = project_path
-            self.file_model.setRootPath(project_path)
-            self.file_tree.setRootIndex(self.file_model.index(project_path))
+        if self.project_path:
+            self.file_model.setRootPath(self.project_path)
+            self.file_tree.setRootIndex(self.file_model.index(self.project_path))
             
             # Update window title
-            project_name = os.path.basename(project_path)
+            project_name = os.path.basename(self.project_path)
             self.setWindowTitle(f"Pylight IDE - {project_name}")
 
     def show_editor_components(self):
@@ -2888,7 +3310,7 @@ class MainWindow(QMainWindow):
         new_file_action.triggered.connect(self.create_new_file)
         new_folder_action.triggered.connect(self.create_new_folder)
         
-        menu.exec_(self.file_tree.viewport().mapToGlobal(position))
+        menu.exec(self.file_tree.viewport().mapToGlobal(position))
 
     def create_new_file_at(self, parent_index):
         """Create new file at specified location"""
@@ -2947,7 +3369,11 @@ class MainWindow(QMainWindow):
         old_name = self.file_model.fileName(index)
         
         new_name, ok = QInputDialog.getText(
-            self, "Rename", "Enter new name:", QInputDialog.Normal, old_name
+            self,
+            "Rename",
+            "Enter new name:",
+            QInputDialog.Normal,
+            old_name
         )
         
         if ok and new_name:
@@ -3010,7 +3436,7 @@ class MainWindow(QMainWindow):
             
         dialog = NewFolderDialog(self.project_path, self)
         if dialog.exec():
-            folder_path = dialog.get_folder_path()
+            folder_path = dialog.get_folder_info()
             try:
                 # Create the folder
                 full_path = os.path.join(self.project_path, folder_path)
@@ -3019,7 +3445,7 @@ class MainWindow(QMainWindow):
                 # Refresh file tree
                 self.file_model.setRootPath(self.project_path)
                 
-                self.statusBar().showMessage(f"Created folder: {folder_path}")
+                self.statusBar().showMessage(f"Created folder: {folder_path}", 3000)
                 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to create folder: {str(e)}")
@@ -3505,7 +3931,7 @@ class MainWindow(QMainWindow):
         new_file_action.triggered.connect(self.create_new_file)
         new_folder_action.triggered.connect(self.create_new_folder)
         
-        menu.exec_(self.file_tree.viewport().mapToGlobal(position))
+        menu.exec(self.file_tree.viewport().mapToGlobal(position))
 
     def refresh_explorer(self):
         """Refresh file explorer"""
@@ -3719,7 +4145,7 @@ class LanguageSupport:
         elif language == 'JavaScript':
             try:
                 cmd = ['node', file_path]
-                result = subprocess.run(cmd, capture_output=True, text=True, cwd=file_dir)
+                result = subprocess.run(cmd, captureoutput=True, text=True, cwd=file_dir)
                 if result.stdout:
                     output_callback(result.stdout)
                 if result.stderr:
@@ -4280,10 +4706,266 @@ class WelcomePage(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Create recent_list before setup_ui
-        self.recent_list = QListWidget()
         self.setup_ui()
-        self.setObjectName("WelcomePage")
+        self.setStyleSheet(f"""
+            QWidget#WelcomePage {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 {EDITOR_COLORS['background']},
+                    stop: 1 #2C1F4A
+                );
+            }}
+            QLabel#WelcomeTitle {{
+                color: {EDITOR_COLORS['text']};
+                font-size: 36px;
+                font-weight: bold;
+                font-family: 'Segoe UI';
+            }}
+            QLabel#WelcomeSubtitle {{
+                color: {EDITOR_COLORS['comments']};
+                font-size: 18px;
+                font-family: 'Segoe UI';
+            }}
+            QPushButton#ActionButton {{
+                background: rgba(68, 71, 90, 0.5);
+                border: 1px solid {EDITOR_COLORS['comments']}40;
+                border-radius: 15px;
+                padding: 15px;
+                color: {EDITOR_COLORS['text']};
+                font-family: 'Segoe UI';
+            }}
+            QPushButton#ActionButton:hover {{
+                background: rgba(98, 114, 164, 0.6);
+                border: 1px solid {EDITOR_COLORS['keywords']}80;
+            }}
+            QGroupBox {{
+                background: rgba(40, 42, 54, 0.5);
+                border: 1px solid {EDITOR_COLORS['comments']}40;
+                border-radius: 15px;
+                padding: 20px;
+                margin-top: 30px;
+            }}
+            QGroupBox::title {{
+                color: {EDITOR_COLORS['keywords']};
+                padding: 0 15px;
+                subcontrol-position: top center;
+            }}
+        """)
+
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(30)
+        main_layout.setContentsMargins(40, 40, 40, 40)
+
+        # Header with gradient background
+        header = QWidget()
+        header.setObjectName("HeaderSection")
+        header.setStyleSheet(f"""
+            #HeaderSection {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 {EDITOR_COLORS['background']},
+                    stop: 1 #2C1F4A
+                );
+                border-radius: 20px;
+                margin: 20px;
+                padding: 30px;
+            }}
+        """)
+        header_layout = QVBoxLayout(header)
+
+        # Logo and title section
+        logo_title = QHBoxLayout()
+        
+        # Logo with glow effect
+        logo_label = QLabel()
+        logo = QPixmap("res/Pyide.png")
+        scaled_logo = logo.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        logo_label.setPixmap(scaled_logo)
+        logo_title.addWidget(logo_label)
+
+        # Title section with gradient text
+        title_section = QVBoxLayout()
+        title = QLabel("Welcome to Pylight IDE")
+        title.setObjectName("WelcomeTitle")
+        subtitle = QLabel("A Modern Development Environment")
+        subtitle.setObjectName("WelcomeSubtitle")
+        
+        title_section.addWidget(title)
+        title_section.addWidget(subtitle)
+        title_section.addStretch()
+        
+        logo_title.addLayout(title_section)
+        logo_title.addStretch()
+        
+        header_layout.addLayout(logo_title)
+
+        # Quick action buttons with glass effect
+        actions = QHBoxLayout()
+        actions.setSpacing(20)
+        
+        # Create action buttons with modern design
+        new_project = self.create_action_button(
+            "New Project",
+            "Start a fresh project",
+            "Ctrl+Shift+N",
+            self.new_file,
+            "project"
+        )
+        open_project = self.create_action_button(
+            "Open Project",
+            "Open existing project",
+            "Ctrl+O",
+            self.open_file,
+            "folder"
+        )
+        clone_repo = self.create_action_button(
+            "Clone Repository",
+            "Clone from Git",
+            "Ctrl+Shift+G",
+            self.clone_repo,
+            "git"
+        )
+        
+        actions.addWidget(new_project)
+        actions.addWidget(open_project)
+        actions.addWidget(clone_repo)
+        
+        header_layout.addLayout(actions)
+        main_layout.addWidget(header)
+
+        # Main content area with glass panels
+        content = QHBoxLayout()
+        
+        # Recent projects panel
+        recent_panel = QGroupBox("Recent Projects")
+        recent_layout = QVBoxLayout(recent_panel)
+        self.recent_list = QListWidget()
+        self.recent_list.setStyleSheet(f"""
+            QListWidget {{
+                background: transparent;
+                border: none;
+                border-radius: 10px;
+                padding: 10px;
+            }}
+            QListWidget::item {{
+                background: rgba(68, 71, 90, 0.3);
+                border-radius: 8px;
+                padding: 10px;
+                margin: 5px 0;
+                color: {EDITOR_COLORS['text']};
+            }}
+            QListWidget::item:hover {{
+                background: rgba(98, 114, 164, 0.4);
+            }}
+            QListWidget::item:selected {{
+                background: rgba(98, 114, 164, 0.6);
+                border: 1px solid {EDITOR_COLORS['keywords']}80;
+            }}
+        """)
+        recent_layout.addWidget(self.recent_list)
+        content.addWidget(recent_panel)
+
+        # Getting Started panel with features
+        started_panel = QGroupBox("Getting Started")
+        started_layout = QGridLayout(started_panel)
+        
+        features = [
+            ("🚀 Quick Setup", "Set up your development environment in minutes"),
+            ("🛠 Multiple Languages", "Support for Python, C++, Java, and more"),
+            ("🔍 Smart Features", "Intelligent code completion and syntax highlighting"),
+            ("⚡ Fast Performance", "Optimized for speed and efficiency"),
+            ("🎨 Customizable", "Themes and extensions support"),
+            ("🔧 Built-in Tools", "Debugger, terminal, and Git integration")
+        ]
+        
+        for i, (title, desc) in enumerate(features):
+            feature = self.create_feature_widget(title, desc)
+            started_layout.addWidget(feature, i // 2, i % 2)
+        
+        content.addWidget(started_panel)
+        main_layout.addLayout(content)
+
+        # Learn more section with gradient buttons
+        learn_more = self.create_learn_more_section()
+        main_layout.addWidget(learn_more)
+
+    def create_feature_widget(self, title, description):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        title_label = QLabel(title)
+        title_label.setStyleSheet(f"""
+            color: {EDITOR_COLORS['keywords']};
+            font-size: 16px;
+            font-weight: bold;
+            padding: 5px;
+        """)
+        
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet(f"""
+            color: {EDITOR_COLORS['comments']};
+            font-size: 14px;
+            padding: 5px;
+        """)
+        desc_label.setWordWrap(True)
+        
+        layout.addWidget(title_label)
+        layout.addWidget(desc_label)
+        
+        widget.setStyleSheet(f"""
+            QWidget {{
+                background: rgba(40, 42, 54, 0.3);
+                border-radius: 10px;
+                padding: 10px;
+            }}
+            QWidget:hover {{
+                background: rgba(68, 71, 90, 0.4);
+                border: 1px solid {EDITOR_COLORS['comments']}40;
+            }}
+        """)
+        
+        return widget
+
+    def create_learn_more_section(self):
+        section = QWidget()
+        layout = QHBoxLayout(section)
+        layout.setSpacing(20)
+        
+        links = [
+            ("Documentation", self.open_docs),
+            ("Video Tutorials", self.open_tutorials),
+            ("Community Forum", self.join_community),
+            ("Report Issues", self.report_issues)
+        ]
+        
+        for text, callback in links:
+            btn = QPushButton(text)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: qlineargradient(
+                        x1: 0, y1: 0, x2: 1, y2: 0,
+                        stop: 0 {EDITOR_COLORS['keywords']}80,
+                        stop: 1 {EDITOR_COLORS['functions']}80
+                    );
+                    border: none;
+                    border-radius: 10px;
+                    padding: 12px 25px;
+                    color: {EDITOR_COLORS['text']};
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background: qlineargradient(
+                        x1: 0, y1: 0, x2: 1, y2: 0,
+                        stop: 0 {EDITOR_COLORS['keywords']},
+                        stop: 1 {EDITOR_COLORS['functions']}
+                    );
+                }}
+            """)
+            btn.clicked.connect(callback)
+            layout.addWidget(btn)
+        
+        return section
 
     def create_action_button(self, title, tooltip, shortcut, callback, icon_name=None):
         """Create a more attractive action button with icon"""
@@ -4426,7 +5108,7 @@ class WelcomePage(QWidget):
         section.layout().addLayout(layout)
         return section
 
-    def load_recent_projects(self):
+    def loadrecent_projects(self):
         """Load recent projects from settings"""
         try:
             with open('settings.json', 'r') as f:
@@ -4445,6 +5127,8 @@ class WelcomePage(QWidget):
         except FileNotFoundError:
             with open('settings.json', 'w') as f:
                 json.dump({'recent_projects': []}, f)
+        except Exception as e:
+            print(f"Error loading recent projects: {str(e)}")
 
     def create_recent_project_item(self, project):
         """Create a widget for a recent project item"""
@@ -4534,20 +5218,26 @@ class WelcomePage(QWidget):
                 path = path_label.text()
                 self.open_project(path)
 
-    def open_project(self, path):
+    def open_project(self, project_path):
         """Open a project and update recent projects"""
-        if os.path.exists(path):
-            # Update last opened time
-            self.update_recent_project(path)
-            # Emit signal to open project
-            self.project_opened.emit(path)
+        if os.path.exists(project_path):
+            self.project_path = project_path
+            self.welcome_page.add_to_recent_projects(project_path)
+            self.show_editor_interface()
+            self.setup_project_explorer()
+            
+            # Update window title
+            project_name = os.path.basename(project_path)
+            self.setWindowTitle(f"Pylight IDE - {project_name}")
+            
+            # Show success message
+            self.statusBar().showMessage(f"Opened project: {project_name}")
         else:
             QMessageBox.warning(
                 self,
                 "Project Not Found",
-                f"The project directory no longer exists:\n{path}"
+                f"The project directory no longer exists:\n{project_path}"
             )
-            self.remove_recent_project({'path': path})
 
     def update_recent_project(self, path):
         """Update last opened time for a project"""
@@ -4622,30 +5312,34 @@ class WelcomePage(QWidget):
         layout.setSpacing(30)
         layout.setContentsMargins(40, 40, 40, 40)
 
-        # Header section with gradient
+        # Header with gradient background
         header = QWidget()
         header.setObjectName("HeaderSection")
-        header.setStyleSheet("""
-            #HeaderSection {
-                background: rgba(40, 42, 54, 0.5);
-                border-radius: 15px;
+        header.setStyleSheet(f"""
+            #HeaderSection {{
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 {EDITOR_COLORS['background']},
+                    stop: 1 #2C1F4A
+                );
+                border-radius: 20px;
                 margin: 20px;
                 padding: 30px;
-            }
+            }}
         """)
         header_layout = QVBoxLayout(header)
 
-        # Logo and titles
-        logo_title_layout = QHBoxLayout()
+        # Logo and title section
+        logo_title = QHBoxLayout()
         
-        # Logo
+        # Logo with glow effect
         logo_label = QLabel()
         logo = QPixmap("res/Pyide.png")
-        scaled_logo = logo.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_logo = logo.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         logo_label.setPixmap(scaled_logo)
-        logo_title_layout.addWidget(logo_label)
+        logo_title.addWidget(logo_label)
 
-        # Title section
+        # Title section with gradient text
         title_section = QVBoxLayout()
         title = QLabel("Welcome to Pylight IDE")
         title.setObjectName("WelcomeTitle")
@@ -4656,74 +5350,80 @@ class WelcomePage(QWidget):
         title_section.addWidget(subtitle)
         title_section.addStretch()
         
-        logo_title_layout.addLayout(title_section)
-        logo_title_layout.addStretch()
+        logo_title.addLayout(title_section)
+        logo_title.addStretch()
         
-        header_layout.addLayout(logo_title_layout)
+        header_layout.addLayout(logo_title)
+
+        # Quick action buttons with glass effect
+        actions = QHBoxLayout()
+        actions.setSpacing(20)
         
-        # Quick action buttons
-        quick_actions = QHBoxLayout()
-        quick_actions.setSpacing(15)
-        
-        # Create action buttons with icons
-        new_project_btn = self.create_action_button(
-            "New Project", 
-            "Start a new project",
+        # Create action buttons with modern design
+        new_project = self.create_action_button(
+            "New Project",
+            "Start a fresh project",
             "Ctrl+Shift+N",
-            self.new_file
+            self.new_file,
+            "project"
         )
-        open_project_btn = self.create_action_button(
+        open_project = self.create_action_button(
             "Open Project",
             "Open existing project",
             "Ctrl+O",
-            self.open_file
+            self.open_file,
+            "folder"
         )
-        clone_repo_btn = self.create_action_button(
+        clone_repo = self.create_action_button(
             "Clone Repository",
             "Clone from Git",
             "Ctrl+Shift+G",
-            self.clone_repo
+            self.clone_repo,
+            "git"
         )
         
-        quick_actions.addWidget(new_project_btn)
-        quick_actions.addWidget(open_project_btn)
-        quick_actions.addWidget(clone_repo_btn)
+        actions.addWidget(new_project)
+        actions.addWidget(open_project)
+        actions.addWidget(clone_repo)
         
-        header_layout.addLayout(quick_actions)
-        layout.addWidget(header)
+        header_layout.addLayout(actions)
+        main_layout.addWidget(header)
 
-        # Main content grid
-        content_grid = QHBoxLayout()
-        content_grid.setSpacing(20)
-
-        # Recent Projects section
-        recent_section = self.create_recent_projects_section()
+        # Main content area with glass panels
+        content = QHBoxLayout()
+        
+        # Recent projects panel
+        recent_panel = QGroupBox("Recent Projects")
+        recent_layout = QVBoxLayout(recent_panel)
         self.recent_list = QListWidget()
-        self.recent_list.setStyleSheet("""
-            QListWidget {
-                background: rgba(40, 42, 54, 0.3);
+        self.recent_list.setStyleSheet(f"""
+            QListWidget {{
+                background: transparent;
                 border: none;
                 border-radius: 10px;
                 padding: 10px;
-            }
-            QListWidget::item {
-                color: #F8F8F2;
+            }}
+            QListWidget::item {{
+                background: rgba(68, 71, 90, 0.3);
+                border-radius: 8px;
                 padding: 10px;
-                margin: 2px 0;
-                border-radius: 5px;
-            }
-            QListWidget::item:hover {
-                background: rgba(68, 71, 90, 0.5);
-            }
+                margin: 5px 0;
+                color: {EDITOR_COLORS['text']};
+            }}
+            QListWidget::item:hover {{
+                background: rgba(98, 114, 164, 0.4);
+            }}
+            QListWidget::item:selected {{
+                background: rgba(98, 114, 164, 0.6);
+                border: 1px solid {EDITOR_COLORS['keywords']}80;
+            }}
         """)
-        self.load_recent_projects()
-        recent_section.layout().addWidget(self.recent_list)
-        content_grid.addWidget(recent_section)
+        recent_layout.addWidget(self.recent_list)
+        content.addWidget(recent_panel)
 
-        # Getting Started section
-        started_section = self.create_section_widget("Getting Started")
-        started_grid = QGridLayout()
-        started_grid.setSpacing(15)
+        # Getting Started panel with features
+        started_panel = QGroupBox("Getting Started")
+        started_layout = QGridLayout(started_panel)
         
         features = [
             ("🚀 Quick Setup", "Set up your development environment in minutes"),
@@ -4736,69 +5436,56 @@ class WelcomePage(QWidget):
         
         for i, (title, desc) in enumerate(features):
             feature = self.create_feature_widget(title, desc)
-            started_grid.addWidget(feature, i // 2, i % 2)
+            started_layout.addWidget(feature, i // 2, i % 2)
         
-        started_section.layout().addLayout(started_grid)
-        content_grid.addWidget(started_section)
-        
-        layout.addLayout(content_grid)
-        
-        # Add learn more section
-        learn_more = self.create_learn_more_section()
-        layout.addWidget(learn_more)
-        
-        scroll.setWidget(content)
-        main_layout.addWidget(scroll)
+        content.addWidget(started_panel)
+        main_layout.addLayout(content)
 
-    def create_section_widget(self, title):
-        section = QWidget()
-        section.setObjectName("ContentSection")
-        section.setStyleSheet("""
-            #ContentSection {
-                background: rgba(40, 42, 54, 0.3);
-                border-radius: 15px;
-                padding: 20px;
-                min-height: 300px;
-            }
-        """)
-        
-        layout = QVBoxLayout(section)
-        title_label = QLabel(title)
-        title_label.setObjectName("SectionTitle")
-        layout.addWidget(title_label)
-        
-        return section
+        # Learn more section with gradient buttons
+        learn_more = self.create_learn_more_section()
+        main_layout.addWidget(learn_more)
 
     def create_feature_widget(self, title, description):
-        feature = QWidget()
-        layout = QVBoxLayout(feature)
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
         
         title_label = QLabel(title)
-        title_label.setStyleSheet("color: #50FA7B; font-size: 16px; font-weight: bold;")
+        title_label.setStyleSheet(f"""
+            color: {EDITOR_COLORS['keywords']};
+            font-size: 16px;
+            font-weight: bold;
+            padding: 5px;
+        """)
         
         desc_label = QLabel(description)
-        desc_label.setStyleSheet("color: #6272A4; font-size: 14px;")
+        desc_label.setStyleSheet(f"""
+            color: {EDITOR_COLORS['comments']};
+            font-size: 14px;
+            padding: 5px;
+        """)
         desc_label.setWordWrap(True)
         
         layout.addWidget(title_label)
         layout.addWidget(desc_label)
-        layout.addStretch()
         
-        return feature
+        widget.setStyleSheet(f"""
+            QWidget {{
+                background: rgba(40, 42, 54, 0.3);
+                border-radius: 10px;
+                padding: 10px;
+            }}
+            QWidget:hover {{
+                background: rgba(68, 71, 90, 0.4);
+                border: 1px solid {EDITOR_COLORS['comments']}40;
+            }}
+        """)
+        
+        return widget
 
     def create_learn_more_section(self):
         section = QWidget()
-        section.setObjectName("LearnMoreSection")
-        section.setStyleSheet("""
-            #LearnMoreSection {
-                background: rgba(40, 42, 54, 0.3);
-                border-radius: 15px;
-                padding: 20px;
-                margin-top: 20px;
-            }
-        """)
-        
         layout = QHBoxLayout(section)
+        layout.setSpacing(20)
         
         links = [
             ("Documentation", self.open_docs),
@@ -4808,20 +5495,30 @@ class WelcomePage(QWidget):
         ]
         
         for text, callback in links:
-            link = QPushButton(text)
-            link.setStyleSheet("""
-                QPushButton {
-                    background: rgba(68, 71, 90, 0.5);
-                    border-radius: 5px;
-                    padding: 10px 20px;
-                    color: #BD93F9;
-                }
-                QPushButton:hover {
-                    background: rgba(98, 114, 164, 0.6);
-                }
+            btn = QPushButton(text)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: qlineargradient(
+                        x1: 0, y1: 0, x2: 1, y2: 0,
+                        stop: 0 {EDITOR_COLORS['keywords']}80,
+                        stop: 1 {EDITOR_COLORS['functions']}80
+                    );
+                    border: none;
+                    border-radius: 10px;
+                    padding: 12px 25px;
+                    color: {EDITOR_COLORS['text']};
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background: qlineargradient(
+                        x1: 0, y1: 0, x2: 1, y2: 0,
+                        stop: 0 {EDITOR_COLORS['keywords']},
+                        stop: 1 {EDITOR_COLORS['functions']}
+                    );
+                }}
             """)
-            link.clicked.connect(callback)
-            layout.addWidget(link)
+            btn.clicked.connect(callback)
+            layout.addWidget(btn)
         
         return section
 
@@ -4832,22 +5529,54 @@ class WelcomePage(QWidget):
                 settings = json.load(f)
                 recent_projects = settings.get('recent_projects', [])
                 
-                # Clear existing items
                 self.recent_list.clear()
-                
-                # Add recent projects to the list
                 for project in recent_projects:
-                    if isinstance(project, dict) and 'name' in project and 'path' in project:
-                        item = QListWidgetItem(project['name'])
-                        item.setData(Qt.UserRole, project['path'])
+                    if os.path.exists(project['path']):
+                        item = QListWidgetItem()
+                        widget = RecentProjectItem(project, self)
+                        item.setSizeHint(widget.sizeHint())
                         self.recent_list.addItem(item)
+                        self.recent_list.setItemWidget(item, widget)
                         
         except FileNotFoundError:
-            # Create empty settings file if it doesn't exist
             with open('settings.json', 'w') as f:
                 json.dump({'recent_projects': []}, f)
         except Exception as e:
             print(f"Error loading recent projects: {str(e)}")
+
+    def add_to_recent_projects(self, project_path):
+        """Add project to recent projects list"""
+        try:
+            with open('settings.json', 'r') as f:
+                settings = json.load(f)
+            
+            recent_projects = settings.get('recent_projects', [])
+            
+            # Create project entry
+            project_entry = {
+                'name': os.path.basename(project_path),
+                'path': project_path,
+                'last_opened': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            # Remove if already exists
+            recent_projects = [p for p in recent_projects if p['path'] != project_path]
+            
+            # Add to front of list
+            recent_projects.insert(0, project_entry)
+            
+            # Keep only last 10 projects
+            settings['recent_projects'] = recent_projects[:10]
+            
+            # Save settings
+            with open('settings.json', 'w') as f:
+                json.dump(settings, f, indent=4)
+                
+            # Reload the list
+            self.load_recent_projects()
+            
+        except Exception as e:
+            print(f"Error adding to recent projects: {str(e)}")
 
     # Action handlers
     def open_docs(self): 
@@ -5715,3 +6444,491 @@ if __name__ == '__main__':
     fade_anim.start()
     
     sys.exit(app.exec())
+
+# Add FileSystemHelper class to handle file/folder operations
+class FileSystemHelper:
+    def __init__(self, parent=None):
+        self.parent = parent
+
+    def create_file(self, directory):
+        """Create a new file in the specified directory"""
+        name, ok = QInputDialog.getText(
+            self.parent,
+            "New File",
+            "Enter file name:",
+            QLineEdit.Normal,
+            "untitled.txt"
+        )
+        
+        if ok and name:
+            try:
+                file_path = Path(directory) / name
+                if not file_path.exists():
+                    file_path.touch()
+                    return str(file_path)
+                else:
+                    QMessageBox.warning(
+                        self.parent,
+                        "File Exists",
+                        f"File '{name}' already exists in this location."
+                    )
+            except Exception as e:
+                QMessageBox.critical(
+                    self.parent,
+                    "Error",
+                    f"Could not create file: {str(e)}"
+                )
+        return None
+
+    def create_folder(self, directory):
+        """Create a new folder in the specified directory"""
+        name, ok = QInputDialog.getText(
+            self.parent,
+            "New Folder",
+            "Enter folder name:",
+            QLineEdit.Normal,
+            "New Folder"
+        )
+        
+        if ok and name:
+            try:
+                folder_path = Path(directory) / name
+                if not folder_path.exists():
+                    folder_path.mkdir()
+                    return str(folder_path)
+                else:
+                    QMessageBox.warning(
+                        self.parent,
+                        "Folder Exists",
+                        f"Folder '{name}' already exists in this location."
+                    )
+            except Exception as e:
+                QMessageBox.critical(
+                    self.parent,
+                    "Error",
+                    f"Could not create folder: {str(e)}"
+                )
+        return None
+
+# Add ProjectExplorer class for better file system organization
+class ProjectExplorer(QTreeView):
+    def __init__(self, root_path, parent=None):
+        super().__init__(parent)
+        self.root_path = root_path
+        self.parent = parent
+        self.setup_ui()
+        self.setup_model()
+        self.setup_context_menu()
+        self.setup_file_icons()
+
+    def setup_file_icons(self):
+        """Setup custom icons for different file types"""
+        self.file_icons = {
+            '.py': QIcon('icons/python.png'),
+            '.cpp': QIcon('icons/cpp.png'),
+            '.c': QIcon('icons/c.png'),
+            '.h': QIcon('icons/h.png'),
+            '.hpp': QIcon('icons/hpp.png'),
+            '.java': QIcon('icons/java.png'),
+            '.js': QIcon('icons/javascript.png'),
+            '.html': QIcon('icons/html.png'),
+            '.css': QIcon('icons/css.png'),
+            '.txt': QIcon('icons/text.png'),
+            'folder': QIcon('icons/folder.png'),
+            'default': QIcon('icons/file.png')
+        }
+
+    def setup_model(self):
+        self.model = QFileSystemModel()
+        self.model.setRootPath(self.root_path)
+        
+        # Set filters to show all files and folders
+        self.model.setFilter(QDir.AllEntries | QDir.NoDotAndDotDot | QDir.Hidden)
+        
+        # Set name filters for supported file types
+        self.model.setNameFilters([
+            "*.py", "*.cpp", "*.c", "*.h", "*.hpp",
+            "*.java", "*.js", "*.html", "*.css", "*.txt"
+        ])
+        self.model.setNameFilterDisables(False)
+        
+        self.setModel(self.model)
+        self.setRootIndex(self.model.index(self.root_path))
+        
+        # Hide unnecessary columns
+        for i in range(1, self.model.columnCount()):
+            self.hideColumn(i)
+
+        # Set column width
+        self.setColumnWidth(0, 250)  # Adjust name column width
+        
+        # Enable sorting
+        self.setSortingEnabled(True)
+        self.sortByColumn(0, Qt.AscendingOrder)
+        
+        # Enable selection
+        self.setSelectionMode(QTreeView.SingleSelection)
+        self.setSelectionBehavior(QTreeView.SelectRows)
+        
+        # Connect signals
+        self.doubleClicked.connect(self.handle_double_click)
+        self.model.directoryLoaded.connect(self.expand_created_item)
+
+    def expand_created_item(self, path):
+        """Expand and select newly created item"""
+        index = self.model.index(path)
+        if index.isValid():
+            # Expand parent
+            parent = index.parent()
+            if parent.isValid():
+                self.expand(parent)
+            # Select the new item
+            self.setCurrentIndex(index)
+            self.scrollTo(index)
+
+    def handle_double_click(self, index):
+        """Handle double-click on items"""
+        path = self.model.filePath(index)
+        if os.path.isfile(path):
+            self.parent.open_file(path)
+
+    def show_context_menu(self, position):
+        menu = QMenu()
+        
+        # Get current item
+        index = self.indexAt(position)
+        current_path = self.model.filePath(index) if index.isValid() else self.root_path
+        is_dir = os.path.isdir(current_path)
+        
+        # Add actions
+        new_file_action = menu.addAction("New File")
+        new_folder_action = menu.addAction("New Folder")
+        menu.addSeparator()
+        
+        if index.isValid():
+            rename_action = menu.addAction("Rename")
+            delete_action = menu.addAction("Delete")
+            
+            # Connect item-specific actions
+            rename_action.triggered.connect(lambda: self.rename_item(index))
+            delete_action.triggered.connect(lambda: self.delete_item(index))
+        
+        # Connect new file/folder actions
+        target_path = current_path if is_dir else os.path.dirname(current_path)
+        new_file_action.triggered.connect(lambda: self.parent.create_new_file(target_path))
+        new_folder_action.triggered.connect(lambda: self.parent.create_new_folder(target_path))
+        
+        menu.exec(self.viewport().mapToGlobal(position))
+
+    def get_current_path(self):
+        """Get the currently selected directory path"""
+        index = self.currentIndex()
+        if index.isValid():
+            path = self.model.filePath(index)
+            return path if os.path.isdir(path) else os.path.dirname(path)
+        return self.root_path
+
+    def refresh(self):
+        """Refresh the view"""
+        self.model.setRootPath(self.root_path)
+
+    def rename_item(self, index):
+        """Rename selected item"""
+        if not index.isValid():
+            return
+            
+        old_path = self.model.filePath(index)
+        old_name = os.path.basename(old_path)
+        
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename",
+            "Enter new name:",
+            QLineEdit.Normal,
+            old_name
+        )
+        
+        if ok and new_name and new_name != old_name:
+            try:
+                new_path = os.path.join(os.path.dirname(old_path), new_name)
+                os.rename(old_path, new_path)
+                self.refresh()
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Could not rename: {str(e)}"
+                )
+
+    def delete_item(self, index):
+        """Delete selected item"""
+        if not index.isValid():
+            return
+            
+        path = self.model.filePath(index)
+        name = os.path.basename(path)
+        
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete '{name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                if os.path.isdir(path):
+                    import shutil
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+                self.refresh()
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Could not delete: {str(e)}"
+                )
+
+    def setup_project_explorer(self):
+        """Setup project explorer panel"""
+        # Create dock widget for project explorer
+        self.project_dock = QDockWidget("Project Explorer", self)
+        self.project_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        
+        # Create main widget
+        explorer_widget = QWidget()
+        layout = QVBoxLayout(explorer_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Create header with title and buttons
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(10, 5, 5, 5)
+        
+        title = QLabel("EXPLORER")
+        title.setStyleSheet("color: #6272A4; font-weight: bold; font-size: 12px;")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        
+        # Add action buttons
+        new_file_btn = QPushButton("＋")
+        new_file_btn.setToolTip("New File (Ctrl+N)")
+        new_file_btn.clicked.connect(self.create_new_file)
+        
+        new_folder_btn = QPushButton("F＋")
+        new_folder_btn.setToolTip("New Folder (Ctrl+Shift+N)")
+        new_folder_btn.clicked.connect(self.create_new_folder)
+        
+        refresh_btn = QPushButton("⟳")
+        refresh_btn.setToolTip("Refresh")
+        refresh_btn.clicked.connect(self.refresh_project_tree)
+        
+        # Style buttons
+        button_style = """
+            QPushButton {
+                background: transparent;
+                border: none;
+                padding: 5px;
+                border-radius: 3px;
+                color: #6272A4;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background: rgba(98, 114, 164, 0.3);
+            }
+        """
+        new_file_btn.setStyleSheet(button_style)
+        new_folder_btn.setStyleSheet(button_style)
+        refresh_btn.setStyleSheet(button_style)
+        
+        header_layout.addWidget(new_file_btn)
+        header_layout.addWidget(new_folder_btn)
+        header_layout.addWidget(refresh_btn)
+        
+        layout.addWidget(header)
+        
+        # Create file system model
+        self.project_model = QFileSystemModel()
+        self.project_model.setRootPath("")
+        
+        # Create tree view
+        self.project_tree = QTreeView()
+        self.project_tree.setModel(self.project_model)
+        self.project_tree.setHeaderHidden(True)
+        self.project_tree.setAnimated(True)
+        self.project_tree.setIndentation(20)
+        
+        # Hide unnecessary columns
+        self.project_tree.hideColumn(1)  # Size
+        self.project_tree.hideColumn(2)  # Type
+        self.project_tree.hideColumn(3)  # Date Modified
+        
+        # Style the tree
+        self.project_tree.setStyleSheet("""
+            QTreeView {
+                background-color: #282A36;
+                border: none;
+                color: #F8F8F2;
+            }
+            QTreeView::item {
+                padding: 5px;
+                border-radius: 3px;
+            }
+            QTreeView::item:hover {
+                background: rgba(68, 71, 90, 0.7);
+            }
+            QTreeView::item:selected {
+                background: rgba(68, 71, 90, 0.9);
+            }
+        """)
+        
+        # Connect signals
+        self.project_tree.doubleClicked.connect(self.open_file_from_tree)
+        self.project_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.project_tree.customContextMenuRequested.connect(self.show_context_menu)
+        
+        layout.addWidget(self.project_tree)
+        self.project_dock.setWidget(explorer_widget)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
+
+def create_placeholder_icon(size=64, color="#6272A4"):
+    """Create a placeholder icon if image file is missing"""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    
+    # Draw background
+    painter.setBrush(QColor(color))
+    painter.setPen(Qt.NoPen)
+    painter.drawRoundedRect(0, 0, size, size, 8, 8)
+    
+    painter.end()
+    return pixmap
+
+# Add this function to load images safely
+def load_icon(path, size=64):
+    """Load an icon, return placeholder if file not found"""
+    if os.path.exists(path):
+        return QPixmap(path).scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    else:
+        return create_placeholder_icon(size)
+
+# Update the WelcomePage class to use the safe image loading
+class WelcomePage(QWidget):
+    def setup_ui(self):
+        # ... other code ...
+        
+        # Logo with fallback
+        logo_label = QLabel()
+        logo = load_icon("res/Pyide.png", 120)
+        logo_label.setPixmap(logo)
+        
+        # ... rest of the code ...
+
+    def create_action_button(self, title, tooltip, shortcut, callback, icon_name=None):
+        # ... other code ...
+        
+        # Add icon with fallback
+        if icon_name:
+            icon_label = QLabel()
+            icon = load_icon(f"res/{icon_name}.png", 24)
+            icon_label.setPixmap(icon)
+            layout.addWidget(icon_label)
+            
+        # ... rest of the code ...
+
+def create_default_logo():
+    """Create a default logo if none exists"""
+    size = 120
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    
+    # Draw background
+    gradient = QLinearGradient(0, 0, size, size)
+    gradient.setColorAt(0, QColor("#BD93F9"))
+    gradient.setColorAt(1, QColor("#FF79C6"))
+    
+    painter.setBrush(gradient)
+    painter.setPen(Qt.NoPen)
+    painter.drawRoundedRect(0, 0, size, size, 20, 20)
+    
+    # Draw text
+    painter.setPen(QColor("#F8F8F2"))
+    font = QFont("Segoe UI", 24, QFont.Bold)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignCenter, "Py")
+    
+    painter.end()
+    return pixmap
+
+# Use this in WelcomePage
+logo = load_icon("res/Pyide.png", 120) if os.path.exists("res/Pyide.png") else create_default_logo()
+
+# Add this class to handle recent project items
+class RecentProjectItem(QWidget):
+    def __init__(self, project_info, parent=None):
+        super().__init__(parent)
+        self.project_info = project_info
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 5, 10, 5)
+
+        # Project info section
+        info_layout = QVBoxLayout()
+        
+        # Project name
+        name_label = QLabel(self.project_info['name'])
+        name_label.setStyleSheet(f"""
+            color: {EDITOR_COLORS['text']};
+            font-size: 14px;
+            font-weight: bold;
+        """)
+        
+        # Project path
+        path_label = QLabel(self.project_info['path'])
+        path_label.setStyleSheet(f"""
+            color: {EDITOR_COLORS['comments']};
+            font-size: 12px;
+        """)
+        
+        info_layout.addWidget(name_label)
+        info_layout.addWidget(path_label)
+        
+        layout.addLayout(info_layout)
+        layout.addStretch()
+
+        # Action buttons
+        open_btn = QPushButton("Open")
+        open_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {EDITOR_COLORS['functions']}80;
+                border: none;
+                border-radius: 3px;
+                padding: 5px 15px;
+                color: {EDITOR_COLORS['text']};
+            }}
+            QPushButton:hover {{
+                background: {EDITOR_COLORS['functions']};
+            }}
+        """)
+        open_btn.clicked.connect(self.open_project)
+        layout.addWidget(open_btn)
+
+    def open_project(self):
+        if os.path.exists(self.project_info['path']):
+            self.parent().parent().project_opened.emit(self.project_info['path'])
+        else:
+            QMessageBox.warning(
+                self,
+                "Project Not Found",
+                f"The project directory no longer exists:\n{self.project_info['path']}"
+            )
