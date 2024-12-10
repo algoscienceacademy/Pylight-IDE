@@ -1,6 +1,4 @@
 
-
-```markdown
 # Pylight-IDE
 
 ![Pylight-IDE Banner](screenshots/banner.png)  
